@@ -2,6 +2,7 @@ export interface Page {
   id: string
   title: string
   content: string
+  source?: string
   isFolder: boolean
   parentId?: string
   children?: Page[]
@@ -51,4 +52,10 @@ export interface AIConfig {
   apiKey: string
   model: string
   enabled: boolean
+}
+
+export interface StorageConfig {
+  type: 'local' | 'webdav' | 'browser'
+  localPath?: string
+  webdavConfig?: WebDAVConfig
 }

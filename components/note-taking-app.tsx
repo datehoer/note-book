@@ -33,6 +33,7 @@ import {
   Plus,
   Settings,
   Bot,
+  Upload,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -48,6 +49,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   Sidebar,
@@ -69,7 +71,11 @@ import { EditorToolbar } from "@/components/editor/editor-toolbar"
 import { PageContextMenu } from "@/components/sidebar/page-context-menu"
 import { WebDAVSettings } from "@/components/settings/webdav-settings"
 import { AISettings } from "@/components/settings/ai-settings"
+import { StorageSettings } from "@/components/settings/storage-settings"
 import { AIChat } from "@/components/ai/ai-chat"
+import { InitialSetup } from "@/components/initial-setup"
+import { MarkdownImport } from "@/components/import/markdown-import"
+import { setupEditorMonitoring } from '@/lib/editor-debug-utils'
 
 
 // Sortable Item Component
@@ -238,6 +244,7 @@ export function NoteTakingApp() {
     loadFromLocal,
     getCurrentPage,
     setSyncStatus,
+    isFirstTimeUse,
   } = useNotesStore()
 
   const [expandedFolders, setExpandedFolders] = React.useState<string[]>([])
@@ -246,6 +253,8 @@ export function NoteTakingApp() {
   const [activeId, setActiveId] = React.useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false)
   const [isAIChatOpen, setIsAIChatOpen] = React.useState(false)
+  const [showInitialSetup, setShowInitialSetup] = React.useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = React.useState(false)
 
   const currentPage = getCurrentPage()
 
@@ -264,6 +273,14 @@ export function NoteTakingApp() {
       loadFromLocal()
     }
   }, [isHydrated, loadFromLocal])
+
+  // First-time setup detection
+  React.useEffect(() => {
+    if (isHydrated && workspace) {
+      const isFirstTime = isFirstTimeUse()
+      setShowInitialSetup(isFirstTime)
+    }
+  }, [isHydrated, workspace, isFirstTimeUse])
 
   // Auto-save functionality
   React.useEffect(() => {
@@ -292,6 +309,12 @@ export function NoteTakingApp() {
       updatePageContent(currentPageId, content)
     }
   }, [currentPageId, updatePageContent])
+
+  const handleInitialSetupComplete = React.useCallback(() => {
+    setShowInitialSetup(false)
+    // 创建一个欢迎页面
+    createPage('欢迎使用笔记本', undefined)
+  }, [createPage])
 
   const handleSyncNow = async () => {
     setSyncStatus('syncing')
@@ -460,8 +483,18 @@ export function NoteTakingApp() {
     memoizedCreateChildFolder
   ])
 
+  // Initialize editor monitoring on mount
+  React.useEffect(() => {
+    setupEditorMonitoring()
+  }, [])
+
   return (
-    <SidebarProvider defaultOpen={true}>
+    <>
+      {showInitialSetup && (
+        <InitialSetup onComplete={handleInitialSetupComplete} />
+      )}
+      {!showInitialSetup && (
+        <SidebarProvider defaultOpen={true}>
       <Sidebar className="border-r border-gray-200">
         <SidebarHeader className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -576,6 +609,30 @@ export function NoteTakingApp() {
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
+              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    className="border-gray-300 bg-transparent"
+                    title="Import Markdown Files"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl">
+                  <DialogHeader>
+                    <DialogTitle>Import Markdown Files</DialogTitle>
+                    <DialogDescription>
+                      Select multiple markdown files to import into your workspace.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <MarkdownImport 
+                    onComplete={() => setIsImportDialogOpen(false)}
+                    onClose={() => setIsImportDialogOpen(false)}
+                  />
+                </DialogContent>
+              </Dialog>
               <Button 
                 variant="outline" 
                 className="border-gray-300 bg-transparent"
@@ -599,6 +656,7 @@ export function NoteTakingApp() {
                     <DialogTitle>设置</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-6">
+                    <StorageSettings />
                     <WebDAVSettings />
                     <AISettings />
                   </div>
@@ -606,6 +664,12 @@ export function NoteTakingApp() {
               </Dialog>
               <Dialog open={isAIChatOpen} onOpenChange={setIsAIChatOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>AI 对话</DialogTitle>
+                    <DialogDescription>
+                      与AI智能助手进行对话，获取写作灵感和帮助
+                    </DialogDescription>
+                  </DialogHeader>
                   <AIChat />
                 </DialogContent>
               </Dialog>
@@ -642,5 +706,7 @@ export function NoteTakingApp() {
         </main>
       </SidebarInset>
     </SidebarProvider>
+      )}
+    </>
   )
 }

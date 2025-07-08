@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
-import { Page, Workspace, AppState, WebDAVConfig, AIConfig } from './types'
-import { storageService } from './storage'
+import { Page, Workspace, AppState, WebDAVConfig, AIConfig, StorageConfig } from './types'
+import { storageService } from './storage-service'
 import { webdavService } from './webdav'
 
 interface NotesStore extends AppState {
@@ -13,6 +13,9 @@ interface NotesStore extends AppState {
   
   // AI config
   aiConfig: AIConfig | null
+  
+  // Storage config
+  storageConfig: StorageConfig
   
   // Actions
   setCurrentPage: (pageId: string) => void
@@ -38,6 +41,13 @@ interface NotesStore extends AppState {
   // AI actions
   setAIConfig: (config: AIConfig) => void
   testAIConnection: () => Promise<boolean>
+  
+  // Storage actions
+  setStorageConfig: (config: StorageConfig) => Promise<void>
+  testStorageConnection: () => Promise<boolean>
+  migrateStorage: (config: StorageConfig) => Promise<void>
+  isFirstTimeUse: () => boolean
+  importMarkdownFiles: (files: { name: string; content: string }[]) => Promise<void>
   
   // Computed values
   getCurrentPage: () => Page | undefined
@@ -65,6 +75,7 @@ export const useNotesStore = create<NotesStore>()(
         viewMode: 'rendered',
         webdavConfig: null,
         aiConfig: null,
+        storageConfig: { type: 'browser' },
 
         setCurrentPage: (pageId: string) => {
           set((state) => ({
@@ -332,6 +343,74 @@ export const useNotesStore = create<NotesStore>()(
           } catch (error) {
             console.error('AI connection test failed:', error)
             return false
+          }
+        },
+
+        setStorageConfig: async (config: StorageConfig) => {
+          try {
+            await storageService.configureStorage(config)
+            set({ storageConfig: config })
+          } catch (error) {
+            console.error('Failed to set storage config:', error)
+            throw error
+          }
+        },
+
+        testStorageConnection: async () => {
+          try {
+            return await storageService.testConnection()
+          } catch (error) {
+            console.error('Storage connection test failed:', error)
+            return false
+          }
+        },
+
+        migrateStorage: async (config: StorageConfig) => {
+          set({ syncStatus: 'syncing' })
+          try {
+            await storageService.configureStorage(config)
+            set({ 
+              storageConfig: config,
+              syncStatus: 'success'
+            })
+          } catch (error) {
+            console.error('Storage migration failed:', error)
+            set({ syncStatus: 'error' })
+            throw error
+          }
+        },
+
+        isFirstTimeUse: () => {
+          const state = get()
+          // 检查是否是首次使用：没有页面数据且使用默认浏览器存储
+          return state.workspace.pages.length === 0 && 
+                 state.storageConfig.type === 'browser' && 
+                 !state.lastSaved
+        },
+
+        importMarkdownFiles: async (files: { name: string; content: string }[]) => {
+          set({ syncStatus: 'syncing' })
+          
+          try {
+            const importedPages = await storageService.importMarkdownFiles(files)
+            
+            // 将导入的页面添加到当前工作区
+            set((state) => ({
+              workspace: {
+                ...state.workspace,
+                pages: [...state.workspace.pages, ...importedPages]
+              },
+              syncStatus: 'success',
+              unsavedChanges: true
+            }))
+            
+            // 自动保存到本地存储
+            await get().saveToLocal()
+            
+          } catch (error) {
+            console.error('Failed to import markdown files:', error)
+            set({ syncStatus: 'error' })
+            throw error
           }
         },
       }),
